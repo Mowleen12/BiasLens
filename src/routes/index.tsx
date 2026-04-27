@@ -41,7 +41,7 @@ function Index() {
       <SiteHeader />
       <main className="flex-1">
         {/* Hero */}
-        <section className="relative overflow-hidden">
+        <section id="home" className="relative overflow-hidden scroll-mt-20">
           <div className="absolute inset-0 -z-10 bg-[image:var(--gradient-hero)]" />
           <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,_oklch(0.62_0.21_285_/_0.18),_transparent_60%)]" />
           <div className="mx-auto max-w-5xl px-6 pb-20 pt-20 text-center sm:pt-28">
@@ -89,7 +89,7 @@ function Index() {
         </section>
 
         {/* Features */}
-        <section className="border-t border-border/60 bg-background py-20">
+        <section id="how-it-works" className="border-t border-border/60 bg-background py-20 scroll-mt-20">
           <div className="mx-auto max-w-7xl px-6">
             <div className="text-center">
               <h2 className="text-3xl font-bold tracking-tight text-foreground">What you can do with BiasLens</h2>
@@ -110,7 +110,7 @@ function Index() {
         </section>
 
         {/* Storytelling: explanation */}
-        <section className="bg-muted/40 py-20">
+        <section id="about" className="bg-muted/40 py-20 scroll-mt-20">
           <div className="mx-auto grid max-w-6xl items-center gap-12 px-6 lg:grid-cols-2">
             <div>
               <span className="inline-flex items-center gap-2 rounded-full bg-info/10 px-3 py-1 text-xs font-medium text-info">
@@ -155,7 +155,7 @@ function Index() {
         </section>
 
         {/* CTA */}
-        <section className="px-6 py-20">
+        <section id="analyze" className="px-6 py-20 scroll-mt-20">
           <div className="mx-auto max-w-5xl overflow-hidden rounded-3xl bg-[image:var(--gradient-cta)] px-8 py-14 text-center shadow-[var(--shadow-lg)]">
             <div className="mx-auto mb-5 flex h-12 w-12 items-center justify-center rounded-xl bg-white/10 backdrop-blur">
               <Zap className="h-6 w-6 text-white" />
