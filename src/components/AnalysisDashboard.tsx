@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
+  BookOpen,
+  Sparkles,
 } from "lucide-react";
 import type { ParsedDataset } from "./UploadCard";
 import { Button } from "./ui/button";
@@ -44,10 +46,12 @@ import {
 } from "./ui/table";
 import {
   analyzeBias,
+  buildNarrative,
   inferSensitiveColumns,
   inferTargetColumns,
   type AnalysisResult,
 } from "@/lib/bias-analysis";
+import { Link } from "@tanstack/react-router";
 
 const SEVERITY_STYLES: Record<string, { label: string; cls: string; chipCls: string }> = {
   none: { label: "No bias detected", cls: "text-success", chipCls: "bg-success/10 text-success border-success/20" },
@@ -121,6 +125,7 @@ export function AnalysisDashboard({
 
   const previewRows = dataset.rows.slice(0, 5);
   const sevStyle = result ? SEVERITY_STYLES[result.severity] : null;
+  const narrative = useMemo(() => (result ? buildNarrative(result) : null), [result]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
