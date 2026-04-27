@@ -18,8 +18,12 @@ function parseCsvText(text: string, fileName: string): ParsedDataset {
     skipEmptyLines: true,
     transformHeader: (h) => h.trim(),
   });
-  const rows = (result.data || []).filter((r) => r && Object.keys(r).length > 0);
-  const headers = result.meta.fields?.map((f) => f.trim()) ?? [];
+  const headers = (result.meta.fields ?? [])
+    .map((f) => (f ?? "").trim())
+    .filter((f) => f.length > 0);
+  const rows = (result.data || []).filter(
+    (r) => r && Object.keys(r).some((k) => k && headers.includes(k.trim())),
+  );
   return { fileName, size: text.length, headers, rows };
 }
 

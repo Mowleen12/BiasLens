@@ -109,7 +109,10 @@ export function AnalysisDashboard({
   dataset: ParsedDataset;
   onClear: () => void;
 }) {
-  const headers = dataset.headers;
+  const headers = useMemo(
+    () => dataset.headers.map((h) => (h ?? "").trim()).filter((h) => h.length > 0),
+    [dataset.headers],
+  );
   const sensitiveSuggestions = useMemo(() => inferSensitiveColumns(headers), [headers]);
   const targetSuggestions = useMemo(() => inferTargetColumns(headers), [headers]);
 
