@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   AlertTriangle,
   RotateCcw,
+  BookOpen,
+  Sparkles,
 } from "lucide-react";
 import type { ParsedDataset } from "./UploadCard";
 import { Button } from "./ui/button";
@@ -44,10 +46,12 @@ import {
 } from "./ui/table";
 import {
   analyzeBias,
+  buildNarrative,
   inferSensitiveColumns,
   inferTargetColumns,
   type AnalysisResult,
 } from "@/lib/bias-analysis";
+import { Link } from "@tanstack/react-router";
 
 const SEVERITY_STYLES: Record<string, { label: string; cls: string; chipCls: string }> = {
   none: { label: "No bias detected", cls: "text-success", chipCls: "bg-success/10 text-success border-success/20" },
@@ -121,6 +125,7 @@ export function AnalysisDashboard({
 
   const previewRows = dataset.rows.slice(0, 5);
   const sevStyle = result ? SEVERITY_STYLES[result.severity] : null;
+  const narrative = useMemo(() => (result ? buildNarrative(result) : null), [result]);
 
   return (
     <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
@@ -271,6 +276,20 @@ export function AnalysisDashboard({
           </div>
         ) : (
           <>
+            {narrative && (
+              <div className={`rounded-2xl border p-6 shadow-[var(--shadow-sm)] ${result.biased ? "border-destructive/20 bg-destructive/5" : "border-success/20 bg-success/5"}`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold ${sevStyle?.chipCls}`}>
+                    {result.biased ? <AlertTriangle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                    {result.biased ? `Bias detected · ${sevStyle?.label}` : "No significant bias"}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Threshold: {result.thresholdPct}% · Gap: {(result.gap * 100).toFixed(1)}%</span>
+                </div>
+                <h2 className="mt-3 text-xl font-bold tracking-tight text-foreground">{narrative.headline}</h2>
+                <p className="mt-2 text-sm leading-relaxed text-foreground">{narrative.summary}</p>
+              </div>
+            )}
+
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
               <StatCard
                 icon={Scale}
@@ -382,29 +401,34 @@ export function AnalysisDashboard({
                 <h3 className="flex items-center gap-2 text-base font-semibold text-info">
                   <MessageSquare className="h-4 w-4" /> Plain English explanation
                 </h3>
-                <div className="mt-4 space-y-4 text-sm text-foreground">
-                  {result.favored && result.disadvantaged && result.favored.group !== result.disadvantaged.group ? (
-                    <p>
-                      <span className="font-semibold">{result.favored.group}</span> has a selection rate of{" "}
-                      <span className="font-semibold">{(result.favored.rate * 100).toFixed(1)}%</span>, while{" "}
-                      <span className="font-semibold">{result.disadvantaged.group}</span> has a selection rate of{" "}
-                      <span className="font-semibold">{(result.disadvantaged.rate * 100).toFixed(1)}%</span>. That means{" "}
-                      <span className="font-semibold">{result.disadvantaged.group}</span> is{" "}
-                      <span className="font-semibold">{(result.gap * 100).toFixed(1)}%</span> less likely to be selected.
-                    </p>
-                  ) : (
-                    <p>All groups have similar selection rates with a gap of {(result.gap * 100).toFixed(1)}%.</p>
-                  )}
-                  <div className="flex items-start gap-2 rounded-xl bg-background/60 p-3">
-                    <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-                    <p className="text-muted-foreground">
-                      <span className="font-semibold text-foreground">What does this mean? </span>
-                      {result.biased
-                        ? `The dataset shows a ${result.severity} difference in outcomes between groups, which could indicate bias. Consider reviewing your data collection and labeling process.`
-                        : "Your dataset appears fair under the current threshold. Continue monitoring as new data arrives."}
-                    </p>
+                {narrative && (
+                  <div className="mt-4 space-y-4 text-sm text-foreground">
+                    <ul className="space-y-2">
+                      {narrative.perGroup.map((s) => (
+                        <li key={s.group} className="flex items-start gap-2">
+                          <span className={`mt-1.5 inline-block h-2 w-2 shrink-0 rounded-full ${s.role === "highest" ? "bg-success" : s.role === "lowest" ? "bg-destructive" : "bg-muted-foreground/60"}`} />
+                          <span>{s.text}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {narrative.ratioSentence && (
+                      <p className="rounded-xl bg-background/60 p-3">{narrative.ratioSentence}</p>
+                    )}
+                    {narrative.fourFifths && (
+                      <div className={`flex items-start gap-2 rounded-xl p-3 ${narrative.fourFifths.pass ? "bg-success/10" : "bg-destructive/10"}`}>
+                        <ShieldCheck className={`mt-0.5 h-4 w-4 shrink-0 ${narrative.fourFifths.pass ? "text-success" : "text-destructive"}`} />
+                        <p>{narrative.fourFifths.sentence}</p>
+                      </div>
+                    )}
+                    <div className="flex items-start gap-2 rounded-xl bg-background/60 p-3">
+                      <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+                      <p className="text-muted-foreground">
+                        <span className="font-semibold text-foreground">What does this mean? </span>
+                        {narrative.contextParagraph}
+                      </p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="rounded-2xl border border-success/20 bg-success/5 p-6">
@@ -412,19 +436,38 @@ export function AnalysisDashboard({
                   <Lightbulb className="h-4 w-4" /> Suggestions to reduce bias
                 </h3>
                 <ul className="mt-4 space-y-3 text-sm text-foreground">
-                  {[
-                    "Collect more representative data for underrepresented groups.",
-                    "Review your data collection process for unintentional bias.",
-                    "Avoid using sensitive attributes directly in decision-making.",
-                    "Check whether the target label itself reflects historical bias.",
-                    "Balance the dataset before training models on it.",
-                  ].map((s) => (
+                  {(narrative?.suggestions ?? []).map((s) => (
                     <li key={s} className="flex items-start gap-2.5">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-success" />
                       <span>{s}</span>
                     </li>
                   ))}
                 </ul>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-sm)]">
+              <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                <BookOpen className="h-4 w-4 text-primary" /> What we measured
+              </h3>
+              <div className="mt-3 grid gap-4 text-sm text-muted-foreground sm:grid-cols-3">
+                <div>
+                  <div className="font-semibold text-foreground">Selection rate</div>
+                  <p className="mt-1">For each group in <span className="font-medium text-foreground">{result.sensitive}</span>, the share of records where <span className="font-medium text-foreground">{result.target}</span> is positive (e.g. hired, approved, accepted).</p>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground">Bias gap</div>
+                  <p className="mt-1">The difference between the highest and lowest selection rate. A larger gap means groups are being treated more differently.</p>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground">Threshold</div>
+                  <p className="mt-1">You flagged anything above <span className="font-medium text-foreground">{result.thresholdPct}%</span> as bias. Lowering it makes the check stricter.</p>
+                </div>
+              </div>
+              <div className="mt-4 flex items-center gap-2 text-xs text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                <span>Want the full methodology?</span>
+                <Link to="/how-it-works" className="font-medium text-primary underline-offset-4 hover:underline">Read how BiasLens works →</Link>
               </div>
             </div>
 

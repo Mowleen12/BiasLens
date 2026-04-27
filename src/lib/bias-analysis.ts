@@ -104,3 +104,119 @@ export function inferTargetColumns(headers: string[]): string[] {
   const keywords = ["hired", "approved", "selected", "passed", "admitted", "accepted", "outcome", "result", "label", "target", "decision"];
   return headers.filter((h) => keywords.some((k) => h.toLowerCase().includes(k)));
 }
+
+export type GroupSentence = {
+  group: string;
+  text: string;
+  rate: number;
+  role: "highest" | "lowest" | "middle";
+};
+
+export type Narrative = {
+  headline: string;
+  verdict: "biased" | "fair";
+  summary: string;
+  perGroup: GroupSentence[];
+  ratioSentence: string | null;
+  fourFifths: { ratio: number; pass: boolean; sentence: string } | null;
+  contextParagraph: string;
+  suggestions: string[];
+};
+
+function pct(n: number, digits = 1) {
+  return `${(n * 100).toFixed(digits)}%`;
+}
+
+export function buildNarrative(result: AnalysisResult): Narrative {
+  const { groups, gap, thresholdPct, biased, severity, favored, disadvantaged, sensitive, target, overall } = result;
+  const gapPctNum = gap * 100;
+
+  const headline = biased
+    ? `Bias detected in "${target}" across "${sensitive}"`
+    : `No significant bias detected in "${target}" across "${sensitive}"`;
+
+  const summary = (() => {
+    if (groups.length < 2) {
+      return `Only one group was found in "${sensitive}", so a fairness comparison can't be made. Try a column with at least two distinct values.`;
+    }
+    if (favored && disadvantaged && favored.group !== disadvantaged.group) {
+      const cmp = biased ? "above" : "within";
+      return `Across ${overall.total.toLocaleString()} records, ${favored.group} has the highest selection rate at ${pct(favored.rate)} (${favored.selected}/${favored.total}), while ${disadvantaged.group} has the lowest at ${pct(disadvantaged.rate)} (${disadvantaged.selected}/${disadvantaged.total}). That is a gap of ${gapPctNum.toFixed(1)} percentage points, ${cmp} your ${thresholdPct}% threshold.`;
+    }
+    return `All groups in "${sensitive}" have similar selection rates, with a gap of just ${gapPctNum.toFixed(1)} percentage points.`;
+  })();
+
+  const perGroup: GroupSentence[] = groups.map((g, i) => {
+    let role: GroupSentence["role"] = "middle";
+    if (i === 0) role = "highest";
+    else if (i === groups.length - 1 && groups.length > 1) role = "lowest";
+    const tag = role === "highest" ? " — highest rate" : role === "lowest" ? " — lowest rate" : "";
+    return {
+      group: g.group,
+      rate: g.rate,
+      role,
+      text: `${g.group}: ${pct(g.rate)} selected (${g.selected} of ${g.total})${tag}.`,
+    };
+  });
+
+  let ratioSentence: string | null = null;
+  let fourFifths: Narrative["fourFifths"] = null;
+  if (favored && disadvantaged && favored.group !== disadvantaged.group && favored.rate > 0) {
+    const ratio = disadvantaged.rate / favored.rate;
+    const times = ratio > 0 ? 1 / ratio : Infinity;
+    ratioSentence = isFinite(times)
+      ? `${disadvantaged.group} is about ${times.toFixed(2)}× less likely to receive a positive outcome than ${favored.group}.`
+      : `${disadvantaged.group} received no positive outcomes, while ${favored.group} did.`;
+    const pass = ratio >= 0.8;
+    fourFifths = {
+      ratio,
+      pass,
+      sentence: pass
+        ? `Four-Fifths Rule: PASS. The ratio of selection rates (${ratio.toFixed(2)}) is at or above the 0.80 threshold commonly used by regulators (e.g. US EEOC).`
+        : `Four-Fifths Rule: FAIL. The ratio of selection rates is ${ratio.toFixed(2)}, below the 0.80 threshold commonly used by regulators (e.g. US EEOC) to flag adverse impact.`,
+    };
+  }
+
+  const contextParagraph = (() => {
+    switch (severity) {
+      case "high":
+        return `This is a large disparity. In real-world systems, gaps of this size often translate into meaningful differences in opportunity and should be investigated before the data is used to train a model or drive decisions.`;
+      case "moderate":
+        return `This is a moderate disparity. It is worth investigating whether the gap reflects a real difference in qualifications or an artifact of how the data was collected, labeled, or filtered.`;
+      case "low":
+        return `The gap is small but still above your threshold. Treat it as a yellow flag — keep monitoring as more data arrives.`;
+      default:
+        return `The differences between groups are within your threshold. The dataset looks reasonably balanced for this attribute, though fairness should be re-checked whenever new data is added.`;
+    }
+  })();
+
+  const suggestions = (() => {
+    const base: string[] = [];
+    if (biased && disadvantaged && favored) {
+      base.push(`Collect more positive-outcome examples for ${disadvantaged.group} in "${target}" to balance representation.`);
+      base.push(`Audit how "${target}" was originally labeled — historical decisions may encode bias against ${disadvantaged.group}.`);
+      base.push(`Avoid using "${sensitive}" directly as a model input, and check for proxy features that strongly correlate with it.`);
+      base.push(`Consider re-sampling or re-weighting so that ${disadvantaged.group} and ${favored.group} contribute more equally during model training.`);
+      base.push(`Re-run this analysis after any data change, and track the ${sensitive} gap as a fairness metric over time.`);
+      base.push(`Document this finding before deployment so reviewers and stakeholders are aware of the disparity.`);
+    } else {
+      base.push(`Continue monitoring "${target}" by ${sensitive} as new records are added.`);
+      base.push(`Run the same check on other sensitive attributes (e.g. age, race, region) if available.`);
+      base.push(`Verify that "${target}" labels are produced consistently across groups.`);
+      base.push(`Keep a record of this fairness check alongside your dataset documentation.`);
+      base.push(`Re-run the analysis at a stricter threshold to stress-test the result.`);
+    }
+    return base;
+  })();
+
+  return {
+    headline,
+    verdict: biased ? "biased" : "fair",
+    summary,
+    perGroup,
+    ratioSentence,
+    fourFifths,
+    contextParagraph,
+    suggestions,
+  };
+}
