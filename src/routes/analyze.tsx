@@ -15,9 +15,10 @@ export const Route = createFileRoute("/analyze")({
       { property: "og:description", content: "Run a fairness analysis on any CSV in seconds." },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>) => ({
-    sample: search.sample === "1" || search.sample === 1 ? 1 : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): { sample?: 1 } => {
+    if (search.sample === "1" || search.sample === 1) return { sample: 1 };
+    return {};
+  },
   component: AnalyzePage,
 });
 
