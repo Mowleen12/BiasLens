@@ -15,11 +15,16 @@ export const Route = createFileRoute("/analyze")({
       { property: "og:description", content: "Run a fairness analysis on any CSV in seconds." },
     ],
   }),
+  validateSearch: (search: Record<string, unknown>): { sample?: 1 } => {
+    if (search.sample === "1" || search.sample === 1) return { sample: 1 };
+    return {};
+  },
   component: AnalyzePage,
 });
 
 function AnalyzePage() {
   const [dataset, setDataset] = useState<ParsedDataset | null>(null);
+  const { sample } = Route.useSearch();
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -37,7 +42,7 @@ function AnalyzePage() {
                 </p>
               </div>
               <div className="mt-10">
-                <UploadCard onLoaded={setDataset} />
+                <UploadCard onLoaded={setDataset} autoLoadSample={sample === 1} />
               </div>
 
               <div className="mt-10 rounded-2xl border border-border bg-card p-6 shadow-[var(--shadow-sm)]">
