@@ -1,59 +1,87 @@
-# Plan: Functional Analyze + Smooth-Scroll Landing Nav
+# Plan: More functionality + loading screens for BiasLens
 
-## 1. Richer human-readable analysis (Analyze page)
+Focused upgrade on three fronts: **loading/feedback states**, **deeper analysis features**, and **export/share**. No new dependencies — everything uses already-installed libs (Papa Parse, Recharts, shadcn, lucide).
 
-Upgrade `AnalysisDashboard.tsx` so the results read like a written report, not just charts and stat cards. Keep all existing functionality and add a narrative layer driven by the actual computed numbers.
+## 1. Loading & feedback states
 
-**New "Key findings" summary panel** (top of results, full width)
-- One-line verdict: "Bias detected" / "No significant bias" with severity chip.
-- 2–3 sentence written summary using real numbers, e.g. "Across 500 records, the selection rate for Male applicants is 80.0% compared to 40.0% for Female applicants — a gap of 40 percentage points, well above your 10% threshold."
-- Highlights the favored group, the disadvantaged group, the gap, the threshold, and total rows.
+Right now upload + analysis are instant/synchronous with zero feedback. Add visible states so the app feels real on bigger files.
 
-**Expanded "Plain English explanation" card**
-- Per-group sentences generated from `result.groups` (not just favored vs disadvantaged), e.g. "Group A: 80.0% selected (160 / 200) — highest rate." for each group.
-- Comparative ratio sentence: "{disadvantaged} is X.Xx less likely to be selected than {favored}."
-- Four-fifths / 80% rule check: compare `disadvantaged.rate / favored.rate` against 0.8 and state pass/fail in plain English (a recognized fairness benchmark).
-- Contextual paragraph that adapts wording based on severity (none/low/moderate/high).
+**Upload progress (`UploadCard.tsx`)**
+- New local state: `status: "idle" | "reading" | "parsing" | "done" | "error"` + `progress` (0–100).
+- Use `FileReader`'s `onprogress` to drive a progress bar while reading bytes.
+- Switch Papa Parse to streaming mode (`step` callback) so we can update a "Parsing row X…" counter for large CSVs, then call `onLoaded` in `complete`.
+- Replace the static dropzone contents with an animated state when busy: spinner + filename + `<Progress />` bar + row counter. Disable the buttons and dropzone while busy.
+- Sample dataset button also shows a brief (~300 ms) simulated loading state so the transition feels consistent.
 
-**Smarter, dataset-aware suggestions**
-- Replace the static 5-bullet list with suggestions that reference the actual sensitive column, target column, favored group, and disadvantaged group by name.
-- Examples: "Collect more positive-outcome examples for {disadvantaged.group} in the '{target}' column." / "Audit how '{target}' decisions were originally labeled to ensure they don't encode historical bias against {disadvantaged.group}."
-- Always show 5–6 actionable items, mixed: data collection, labeling review, modeling guidance, monitoring.
+**Analysis running state (`AnalysisDashboard.tsx`)**
+- New state: `analyzing: boolean`. On "Analyze dataset": set `analyzing=true`, defer the real work with `setTimeout(..., 600)` + `requestIdleCallback` fallback so the UI paints a loading view first (the computation itself is fast, but the reveal should feel considered).
+- Full-width **skeleton results panel** while analyzing: shimmering verdict banner, 4 stat-card skeletons, chart skeleton, table skeleton (reuse existing `ui/skeleton.tsx`).
+- Animated progress steps strip: "Reading rows → Grouping by {sensitive} → Computing selection rates → Checking fairness rules" with each step lighting up in sequence.
+- Analyze button shows a spinner + "Analyzing…" label and is disabled during the run.
 
-**"What we measured" methodology card** (collapsible/inline)
-- Short explainer: definition of selection rate, definition of bias gap, what the threshold means, link out to `/how-it-works`. Helps it feel like a real tool.
+**Route-level transitions**
+- Brief fade-in on the dashboard when `result` first appears (Tailwind `animate-in fade-in slide-in-from-bottom-2 duration-500`).
 
-**Implementation details**
-- All new copy is computed in a small helper inside `bias-analysis.ts` (e.g. `buildNarrative(result)` returning `{ headline, summary, perGroupSentences[], ratio, fourFifthsPass, contextParagraph, suggestions[] }`) so the dashboard stays presentational.
-- No new dependencies. Pure functions over the existing `AnalysisResult`.
+## 2. More analysis functionality
 
-## 2. Landing page nav: smooth-scroll to sections
+**Data quality panel (new, shown on dataset preview before running)**
+- Compute: total rows, total columns, missing values in sensitive col, missing values in target col, % usable rows, distinct group count, min group size.
+- Warn inline if: target column isn't binary-ish, a group has <30 rows (low confidence), >20% missing in sensitive/target.
+- Lives above the existing dataset preview table.
 
-Make the top-bar links on the landing page scroll the user to the relevant section on the same page (the requested "slide towards the area" behavior), while still working as real routes elsewhere.
+**Intersectional analysis (optional second sensitive attribute)**
+- New multi-select in the sidebar: "Add secondary attribute (optional)" (e.g. gender × age bucket).
+- When set, `analyzeBias` is called on a synthetic combined key (`"Female · 30-40"`). Results render in the same charts/tables. Narrative labels intersectional groups correctly.
 
-**Section anchors on `/`**
-- Add `id="home"`, `id="how-it-works"`, `id="about"`, `id="analyze"` to the existing landing sections (hero, features/storytelling, CTA). Add a lightweight new "About" blurb section if needed so the About link has a target.
-- Add `scroll-mt-20` (or equivalent) to offset the sticky header.
+**Statistical significance check**
+- Extend `bias-analysis.ts` with a two-proportion z-test between the favored and disadvantaged groups. Return `{ zScore, pValue, significant: pValue < 0.05 }`.
+- Show as a small badge in the verdict card: "Statistically significant (p < 0.05)" vs "Not statistically significant — small sample".
+- Explained in plain English in the narrative ("With {n} records, this gap is unlikely to be random chance.").
 
-**SiteHeader becomes context-aware**
-- Detect current route via `useLocation()`.
-- When on `/`: render nav items as `<a href="#how-it-works">` etc. with an `onClick` that calls `element.scrollIntoView({ behavior: "smooth", block: "start" })` and updates the hash without a route change.
-- When on any other route: keep the current `<Link to="/how-it-works">` behavior so deep pages still work.
-- "Analyze" stays a real `<Link to="/analyze">` everywhere (it's a separate workspace, not a landing section) — but we can also accept hash `/#analyze` to scroll to the upload card on the home page. Decision: on the landing page, "Analyze" scrolls to the hero upload card; the "Get started" CTA button still routes to `/analyze`.
-- On initial load of `/` with a hash (e.g. `/#how-it-works`), scroll to that section after mount.
+**Per-group confidence intervals on the bar chart**
+- Wilson score interval per group, rendered as error bars on each bar via Recharts `ErrorBar`. Helps a judge see small groups have wide uncertainty.
 
-**Active section highlighting (nice-to-have, included)**
-- Use an IntersectionObserver in the header to mark the currently-visible section's link as active on the landing page only.
+**Additional fairness metrics card**
+- New card alongside "What we measured":
+  - Disparate Impact Ratio (disadvantaged / favored rate) with PASS/FAIL vs 0.80.
+  - Statistical Parity Difference (rate_disadvantaged − rate_favored).
+  - Demographic Parity status.
+- Each with a 1-sentence plain-English gloss.
+
+**Automatic column inference improvements**
+- Detect binary target columns by value distribution, not just by header name (e.g. a `status` column containing only `accepted/rejected`).
+- Detect low-cardinality categorical columns as candidate sensitive attributes.
+- Surface the top 3 suggested (sensitive, target) pairs as clickable chips above the selectors ("Try: gender × hired").
+
+## 3. Export & share
+
+**Download report as PDF** (print-based, no deps)
+- "Download report" button in the dashboard header. Adds a `print:` stylesheet block (hides sidebar/nav, forces full-width, keeps charts) and triggers `window.print()`. Users can save as PDF from the browser dialog.
+
+**Download results as CSV**
+- "Export CSV" button generates a per-group summary CSV (`group,selected,total,selection_rate,is_favored,is_disadvantaged`) via a Blob + object URL. Includes run metadata rows at the top (file, sensitive, target, threshold, timestamp).
+
+**Copy shareable summary**
+- "Copy summary" button writes the narrative headline + per-group sentences + four-fifths verdict to the clipboard as plain text for pasting into Slack/email.
+
+## 4. Small UX wins
+
+- **Threshold presets**: chips for 5% / 10% / 20% next to the slider.
+- **Keyboard shortcut**: `Enter` on the sidebar runs analysis when both selects are filled.
+- **Toast notifications** (via existing `sonner`): on analysis complete ("Analysis ready — gap 22.3%"), on CSV parse errors, on successful export.
+- **Empty-state polish** on the landing upload card: "Try sample dataset" on the home page now actually loads the sample and navigates to `/analyze?sample=1`, which auto-loads it on mount.
 
 ## Files touched
 
-- `src/lib/bias-analysis.ts` — add `buildNarrative()` helper and types.
-- `src/components/AnalysisDashboard.tsx` — add Key Findings panel, expand Plain English card, swap static suggestions for dynamic ones, add methodology card.
-- `src/routes/index.tsx` — add section `id`s and `scroll-mt-*` offsets; add small About section if missing.
-- `src/components/SiteHeader.tsx` — route-aware nav: smooth-scroll anchors on `/`, normal links elsewhere; hash-on-mount scroll; active-section highlighting.
+- `src/components/UploadCard.tsx` — streaming parse, progress UI, loading/error states.
+- `src/components/AnalysisDashboard.tsx` — analyzing skeleton, progress steps, data-quality panel, intersectional selector, extra metrics card, threshold presets, export buttons, print styles, toasts.
+- `src/lib/bias-analysis.ts` — add `dataQualityReport()`, `analyzeIntersectional()`, two-proportion z-test, Wilson CI, disparate-impact/SPD helpers.
+- `src/routes/analyze.tsx` — read `?sample=1` query and preload sample dataset; render a lightweight mount-time skeleton.
+- `src/routes/index.tsx` — wire "Try sample dataset" CTA to `/analyze?sample=1`.
+- `src/styles.css` — `@media print` rules for report export.
 
 ## Out of scope
 
-- PDF/CSV export of the report (mentioned as a feature card but not requested now).
-- Auth, persistence, server-side analysis.
-- Mobile hamburger menu redesign (current md+ nav stays as-is).
+- Server-side analysis, auth, persistence, account history.
+- Model-level fairness auditing (predictions + labels) — mentioned as future extension in the original brief.
+- Real PDF generation with a headless renderer (print-to-PDF is enough for MVP).
