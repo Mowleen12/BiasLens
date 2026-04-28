@@ -1,79 +1,101 @@
-# BiasLens 🔍
+# 🔍 BiasLens  
+### Fairness and Bias Detection for Tabular Datasets — Right in Your Browser
 
-**Fairness and bias detection for tabular datasets — right in your browser.**
+BiasLens is a **privacy-first web app** that helps you detect **demographic bias in datasets** before training machine learning models.
 
-BiasLens is a lightweight, privacy-first web app that helps data scientists, ML engineers, and students audit datasets for demographic bias before training models on them. Upload a CSV, pick a sensitive attribute (gender, race, age group…) and an outcome column (hired, approved, admitted…), and get an instant, explainable fairness report.
+Upload a CSV, choose a sensitive attribute (like gender or age), select an outcome column (like hired or approved), and instantly get a **clear, explainable fairness report**.
 
-No account. No upload to a server. Your data never leaves your browser.
+- 🔒 No login required  
+- 🛑 No server upload — everything runs locally  
+- ⚡ Fast, lightweight, and easy to use  
+
+---
+
+## 🧠 Why BiasLens?
+
+Most fairness tools:
+- Require Python and complex setup  
+- Work only after model training  
+- Are difficult for beginners  
+
+BiasLens focuses on:
+> **Understanding dataset bias at the very first step**
+
+Perfect for:
+- Students  
+- Data scientists  
+- ML engineers  
+- Hackathon teams  
 
 ---
 
 ## ✨ Features
 
-- **One-click CSV upload** with drag-and-drop, streaming parser, and live progress.
-- **Automatic column inference** — BiasLens suggests likely sensitive/target column pairs.
-- **Fairness metrics that matter**:
-  - Selection rate per group with **95% Wilson confidence intervals**
-  - **Disparate Impact Ratio** (the four-fifths rule)
-  - **Statistical Parity Difference**
-  - **Two-proportion z-test** with p-values to flag statistically significant gaps
-- **Intersectional analysis** — combine two sensitive attributes (e.g. gender × age group).
-- **Data quality panel** — flags missing values, tiny groups (<30 rows), and non-binary targets.
-- **Plain-English narrative** explaining what the numbers actually mean.
-- **Interactive charts** (Recharts) with per-group color coding and error bars.
-- **Export anywhere** — download CSV results, copy a shareable summary, or save the full report as PDF.
-- **Sample dataset** included so you can try it in one click.
+### 📂 Easy CSV Upload
+- Drag-and-drop support  
+- Streaming parser for large files  
+- Live upload progress  
 
-## 🧠 Why BiasLens?
-
-Most ML fairness tooling is heavyweight, Python-only, or assumes you already have a trained model. BiasLens focuses on the *first* step of the pipeline: **understanding whether your dataset itself is fair**, in seconds, with zero setup.
-
-Built as an MVP by an AI/ML student team, designed to be extended into full model auditing and bias mitigation.
-
-## 🚀 Getting Started
-
-```bash
-# Install dependencies
-bun install
-
-# Run the dev server
-bun run dev
-
-# Build for production
-bun run build
-```
-
-Then open `http://localhost:5173` and either upload your own CSV or click **Try sample dataset**.
-
-## 🛠️ Tech Stack
-
-- **Framework**: [TanStack Start](https://tanstack.com/start) (React 19 + Vite 7, file-based routing, SSR-ready)
-- **Styling**: Tailwind CSS v4 with a semantic design-token system
-- **UI**: shadcn/ui + Radix primitives + lucide-react icons
-- **CSV parsing**: Papa Parse (streaming)
-- **Charts**: Recharts with Wilson confidence intervals
-- **Notifications**: sonner
-
-## 📊 How It Works
-
-1. **Upload** a CSV file (parsed entirely in-browser).
-2. **Select** a sensitive attribute (e.g. `gender`) and a binary target column (e.g. `hired`).
-3. **Set a fairness threshold** — the maximum acceptable gap in selection rates between groups.
-4. **Analyze** — BiasLens computes per-group selection rates, runs the four-fifths rule, statistical parity difference, and a two-proportion z-test.
-5. **Read the report** — verdict banner, metrics cards, group breakdown chart with error bars, and a plain-English narrative you can copy or export.
-
-## 🗺️ Roadmap
-
-- [ ] Model-level fairness auditing (predictions vs. labels, equalized odds, equal opportunity)
-- [ ] Bias mitigation suggestions (reweighing, resampling, threshold tuning)
-- [ ] Multi-class targets
-- [ ] Server-side analysis for very large datasets
-- [ ] Saveable report links
-
-## 📄 License
-
-MIT — feel free to fork, extend, and use in your own projects.
+### 🤖 Smart Column Detection
+- Automatically suggests:
+  - Sensitive attributes (e.g., gender, race)  
+  - Target columns (e.g., hired, approved)  
 
 ---
 
-Made with ❤️ for fair ML.
+### 📊 Fairness Metrics
+
+BiasLens computes:
+
+- **Selection Rate**
+- **95% Wilson Confidence Intervals**
+- **Disparate Impact Ratio (Four-Fifths Rule)**
+- **Statistical Parity Difference**
+- **Two-Proportion Z-Test (p-values)**
+
+---
+
+### 🧩 Intersectional Analysis
+- Combine two attributes (e.g., gender × age)  
+- Discover deeper bias patterns  
+
+---
+
+### ⚠️ Data Quality Checks
+- Missing values detection  
+- Small group warnings (<30 rows)  
+- Non-binary target validation  
+
+---
+
+### 📖 Explainable Reports
+- Clear fairness verdict  
+- Plain-English explanation  
+- Easy-to-understand insights  
+
+---
+
+### 📈 Interactive Charts
+- Group-wise comparison  
+- Confidence interval error bars  
+- Color-coded visualization  
+
+---
+
+### 📤 Export Options
+- Download CSV results  
+- Copy summary  
+- Export report as PDF  
+
+---
+
+### 🧪 Built-in Sample Dataset
+- Try instantly without uploading data  
+
+---
+
+## 🚀 Getting Started
+
+### 1. Install Dependencies
+```bash
+bun install
