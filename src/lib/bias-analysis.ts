@@ -123,8 +123,269 @@ export type Narrative = {
   suggestions: string[];
 };
 
+export type DataQualityReport = {
+  totalRows: number;
+  totalColumns: number;
+  sensitiveMissing: number;
+  targetMissing: number;
+  usablePct: number;
+  groupCount: number;
+  smallestGroupSize: number;
+  smallestGroupName: string | null;
+  targetIsBinary: boolean;
+  warnings: string[];
+};
+
+export type SignificanceResult = {
+  zScore: number;
+  pValue: number;
+  significant: boolean;
+  sentence: string;
+};
+
+export type WilsonInterval = { lower: number; upper: number };
+
+export type GroupResultWithCI = GroupResult & { ci: WilsonInterval };
+
+export type FairnessMetrics = {
+  disparateImpactRatio: number | null;
+  disparateImpactPass: boolean | null;
+  statisticalParityDifference: number | null;
+  demographicParityPass: boolean | null;
+};
+
 function pct(n: number, digits = 1) {
   return `${(n * 100).toFixed(digits)}%`;
+}
+
+// Wilson score interval for a binomial proportion
+export function wilsonInterval(selected: number, total: number, z = 1.96): WilsonInterval {
+  if (total === 0) return { lower: 0, upper: 0 };
+  const p = selected / total;
+  const denom = 1 + (z * z) / total;
+  const center = (p + (z * z) / (2 * total)) / denom;
+  const margin = (z * Math.sqrt((p * (1 - p)) / total + (z * z) / (4 * total * total))) / denom;
+  return {
+    lower: Math.max(0, center - margin),
+    upper: Math.min(1, center + margin),
+  };
+}
+
+// Approximation of the standard normal CDF (Abramowitz & Stegun)
+function normalCdf(x: number): number {
+  const t = 1 / (1 + 0.2316419 * Math.abs(x));
+  const d = 0.3989422804014327 * Math.exp(-x * x / 2);
+  const p =
+    d *
+    t *
+    (0.31938153 +
+      t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+  return x > 0 ? 1 - p : p;
+}
+
+export function twoProportionZTest(
+  s1: number,
+  n1: number,
+  s2: number,
+  n2: number,
+): SignificanceResult {
+  if (n1 === 0 || n2 === 0) {
+    return { zScore: 0, pValue: 1, significant: false, sentence: "Sample too small for a significance test." };
+  }
+  const p1 = s1 / n1;
+  const p2 = s2 / n2;
+  const pPool = (s1 + s2) / (n1 + n2);
+  const se = Math.sqrt(pPool * (1 - pPool) * (1 / n1 + 1 / n2));
+  if (se === 0) {
+    return { zScore: 0, pValue: 1, significant: false, sentence: "No variation between groups — significance test not meaningful." };
+  }
+  const z = (p1 - p2) / se;
+  const pValue = 2 * (1 - normalCdf(Math.abs(z)));
+  const significant = pValue < 0.05;
+  const sentence = significant
+    ? `With ${n1 + n2} records, this gap is unlikely to be random chance (two-proportion z-test, p = ${pValue.toFixed(3)}).`
+    : `With ${n1 + n2} records, the gap is not statistically significant (p = ${pValue.toFixed(3)}). It could be random variation.`;
+  return { zScore: z, pValue, significant, sentence };
+}
+
+export function computeSignificance(result: AnalysisResult): SignificanceResult | null {
+  if (!result.favored || !result.disadvantaged || result.favored.group === result.disadvantaged.group) {
+    return null;
+  }
+  return twoProportionZTest(
+    result.favored.selected,
+    result.favored.total,
+    result.disadvantaged.selected,
+    result.disadvantaged.total,
+  );
+}
+
+export function computeFairnessMetrics(result: AnalysisResult): FairnessMetrics {
+  if (!result.favored || !result.disadvantaged || result.favored.group === result.disadvantaged.group) {
+    return {
+      disparateImpactRatio: null,
+      disparateImpactPass: null,
+      statisticalParityDifference: null,
+      demographicParityPass: null,
+    };
+  }
+  const di = result.favored.rate > 0 ? result.disadvantaged.rate / result.favored.rate : 0;
+  const spd = result.disadvantaged.rate - result.favored.rate;
+  return {
+    disparateImpactRatio: di,
+    disparateImpactPass: di >= 0.8,
+    statisticalParityDifference: spd,
+    demographicParityPass: Math.abs(spd) * 100 <= result.thresholdPct,
+  };
+}
+
+export function withConfidenceIntervals(result: AnalysisResult): GroupResultWithCI[] {
+  return result.groups.map((g) => ({ ...g, ci: wilsonInterval(g.selected, g.total) }));
+}
+
+function looksBinary(values: unknown[]): boolean {
+  const distinct = new Set<string>();
+  for (const v of values) {
+    if (v == null || String(v).trim() === "") continue;
+    distinct.add(String(v).trim().toLowerCase());
+    if (distinct.size > 4) return false;
+  }
+  if (distinct.size === 0 || distinct.size > 2) return false;
+  // Either it's truly 2 distinct, or 1 distinct that's truthy/falsy-shaped
+  return true;
+}
+
+export function analyzeDataQuality(
+  rows: Record<string, unknown>[],
+  headers: string[],
+  sensitive: string,
+  target: string,
+): DataQualityReport {
+  const totalRows = rows.length;
+  let sensMissing = 0;
+  let targetMissing = 0;
+  const groupSizes = new Map<string, number>();
+  const targetValues: unknown[] = [];
+
+  for (const r of rows) {
+    const sv = r[sensitive];
+    const tv = r[target];
+    if (sv == null || String(sv).trim() === "") sensMissing++;
+    else {
+      const key = String(sv).trim();
+      groupSizes.set(key, (groupSizes.get(key) ?? 0) + 1);
+    }
+    if (tv == null || String(tv).trim() === "") targetMissing++;
+    else targetValues.push(tv);
+  }
+
+  const usable = rows.filter(
+    (r) =>
+      r[sensitive] != null &&
+      String(r[sensitive]).trim() !== "" &&
+      r[target] != null &&
+      String(r[target]).trim() !== "",
+  ).length;
+  const usablePct = totalRows > 0 ? (usable / totalRows) * 100 : 0;
+
+  let smallestGroupSize = Infinity;
+  let smallestGroupName: string | null = null;
+  for (const [k, v] of groupSizes) {
+    if (v < smallestGroupSize) {
+      smallestGroupSize = v;
+      smallestGroupName = k;
+    }
+  }
+  if (!isFinite(smallestGroupSize)) smallestGroupSize = 0;
+
+  const targetIsBinary = looksBinary(targetValues);
+
+  const warnings: string[] = [];
+  if (!targetIsBinary)
+    warnings.push(
+      `"${target}" doesn't look binary. BiasLens treats values like 1/yes/hired/approved as positive — verify this matches your data.`,
+    );
+  if (smallestGroupName && smallestGroupSize < 30 && smallestGroupSize > 0)
+    warnings.push(
+      `Group "${smallestGroupName}" has only ${smallestGroupSize} records — results for it will have wide uncertainty.`,
+    );
+  if (totalRows > 0 && sensMissing / totalRows > 0.2)
+    warnings.push(`Over 20% of rows are missing a value in "${sensitive}" — consider cleaning the data.`);
+  if (totalRows > 0 && targetMissing / totalRows > 0.2)
+    warnings.push(`Over 20% of rows are missing a value in "${target}" — these rows are excluded.`);
+
+  return {
+    totalRows,
+    totalColumns: headers.length,
+    sensitiveMissing: sensMissing,
+    targetMissing: targetMissing,
+    usablePct,
+    groupCount: groupSizes.size,
+    smallestGroupSize,
+    smallestGroupName,
+    targetIsBinary,
+    warnings,
+  };
+}
+
+// Build a synthetic combined column for intersectional analysis
+export function buildIntersectionalRows(
+  rows: Record<string, unknown>[],
+  primary: string,
+  secondary: string,
+): { rows: Record<string, unknown>[]; key: string } {
+  const key = `${primary} · ${secondary}`;
+  const out = rows.map((r) => {
+    const a = r[primary];
+    const b = r[secondary];
+    const aOk = a != null && String(a).trim() !== "";
+    const bOk = b != null && String(b).trim() !== "";
+    return {
+      ...r,
+      [key]: aOk && bOk ? `${String(a).trim()} · ${String(b).trim()}` : "",
+    };
+  });
+  return { rows: out, key };
+}
+
+// Suggest top (sensitive, target) pairs based on header names AND value distributions
+export function suggestColumnPairs(
+  rows: Record<string, unknown>[],
+  headers: string[],
+): { sensitive: string; target: string }[] {
+  if (rows.length === 0 || headers.length < 2) return [];
+  const sensitivesByName = new Set(inferSensitiveColumns(headers));
+  const targetsByName = new Set(inferTargetColumns(headers));
+
+  const lowCardinality: string[] = [];
+  const binaryCols: string[] = [];
+  for (const h of headers) {
+    const values = rows.map((r) => r[h]);
+    const distinct = new Set<string>();
+    for (const v of values) {
+      if (v == null || String(v).trim() === "") continue;
+      distinct.add(String(v).trim().toLowerCase());
+      if (distinct.size > 8) break;
+    }
+    if (distinct.size >= 2 && distinct.size <= 6) lowCardinality.push(h);
+    if (looksBinary(values)) binaryCols.push(h);
+  }
+
+  const sensitiveCandidates = Array.from(new Set([...sensitivesByName, ...lowCardinality]));
+  const targetCandidates = Array.from(new Set([...targetsByName, ...binaryCols]));
+
+  const pairs: { sensitive: string; target: string }[] = [];
+  for (const s of sensitiveCandidates) {
+    for (const t of targetCandidates) {
+      if (s === t) continue;
+      // Score: prefer name-matched on both sides
+      const score =
+        (sensitivesByName.has(s) ? 2 : 0) + (targetsByName.has(t) ? 2 : 0);
+      pairs.push({ sensitive: s, target: t, ...({ score } as object) });
+    }
+  }
+  pairs.sort((a: any, b: any) => (b.score ?? 0) - (a.score ?? 0));
+  return pairs.slice(0, 3).map(({ sensitive, target }) => ({ sensitive, target }));
 }
 
 export function buildNarrative(result: AnalysisResult): Narrative {
